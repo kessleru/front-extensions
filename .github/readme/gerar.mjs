@@ -6,7 +6,7 @@
  * Sem dependências. Todo texto de terminal nas cenas lá embaixo é cópia de uma
  * execução real — se a saída mudar, cole a nova e rode de novo.
  */
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const SAIDA = import.meta.dirname;
@@ -130,7 +130,7 @@ ${linhasSvg(linhas, { x: 20, y0: +(44 + alturaLinha * 0.75).toFixed(1), alturaLi
     </g>`;
 }
 
-function banner({ arquivo, titulo, tagline, stack, pills = [], cores, card, rotulo }) {
+function banner({ arquivo, titulo, tagline, stack, pills = [], cores, card, arte = '', defs = '', circulos = true, rotulo }) {
   const { de, ate, texto = '#ffffff', suave = 'rgba(255,255,255,.78)', circulo = '#ffffff', circuloOpacidade = 0.08 } = cores;
   const tamanhoTitulo = titulo.length > 16 ? 44 : 52;
 
@@ -163,11 +163,14 @@ function banner({ arquivo, titulo, tagline, stack, pills = [], cores, card, rotu
       <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#000000" flood-opacity=".28"/>
     </filter>
     <clipPath id="recorte"><rect width="428" height="252" rx="18"/></clipPath>
+    <clipPath id="moldura"><rect width="1200" height="380" rx="24"/></clipPath>${defs}
   </defs>
 
   <rect width="1200" height="380" rx="24" fill="url(#bg)"/>
-  <circle cx="1105" cy="60" r="190" fill="${circulo}" opacity="${circuloOpacidade}"/>
-  <circle cx="110" cy="360" r="150" fill="${circulo}" opacity="${circuloOpacidade * 0.8}"/>
+${circulos ? `  <circle cx="1105" cy="60" r="190" fill="${circulo}" opacity="${circuloOpacidade}"/>
+  <circle cx="110" cy="360" r="150" fill="${circulo}" opacity="${circuloOpacidade * 0.8}"/>` : ''}
+  <g clip-path="url(#moldura)">${arte}
+  </g>
 
   <text x="72" y="148" font-family="${FONTE_UI}" font-size="${tamanhoTitulo}" font-weight="800" letter-spacing="-1" fill="${texto}">${escapar(titulo)}</text>
   <text x="74" y="196" font-family="${FONTE_UI}" font-size="24" font-weight="600" fill="${texto}">${escapar(tagline)}</text>
@@ -177,15 +180,38 @@ function banner({ arquivo, titulo, tagline, stack, pills = [], cores, card, rotu
     ${pillsSvg}
   </g>
 
-  <g transform="translate(700,64)">
+${card ? `  <g transform="translate(700,64)">
     <rect width="428" height="252" rx="18" fill="${card.fundo ?? '#ffffff'}" filter="url(#sombra)"/>
     <g clip-path="url(#recorte)">${card.conteudo}
     </g>
-  </g>
+  </g>` : ''}
 </svg>
 `;
   writeFileSync(join(SAIDA, arquivo), svg);
   console.log(`✓ ${arquivo}  (1200×380)`);
+}
+
+/**
+ * Embute um SVG do próprio repositório (logo, ícone) dentro do banner, na
+ * caixa x/y/largura/altura. Ids ganham prefixo para não colidirem entre si.
+ * `trocar` substitui cores literais (ex.: { white: '#1a1a1a' }).
+ */
+function svgArquivo(caminho, { x, y, largura, altura, trocar = {}, extra = '' }) {
+  let bruto = readFileSync(join(SAIDA, '..', '..', caminho), 'utf8')
+    .replace(/<\?xml[^>]*>/g, '')
+    .replace(/<!--[\s\S]*?-->/g, '');
+  const raiz = bruto.match(/<svg[ >][^>]*>/)[0];
+  const viewBox =
+    (raiz.match(/viewBox="([^"]+)"/) ?? [])[1] ??
+    `0 0 ${parseFloat(raiz.match(/width="([^"]+)"/)[1])} ${parseFloat(raiz.match(/height="([^"]+)"/)[1])}`;
+  const prefixo = caminho.replace(/[^a-z0-9]/gi, '');
+  let miolo = bruto.slice(bruto.indexOf(raiz) + raiz.length, bruto.lastIndexOf('</svg>'));
+  miolo = miolo
+    .replace(/id="([^"]+)"/g, `id="${prefixo}-$1"`)
+    .replace(/url\(#([^)]+)\)/g, `url(#${prefixo}-$1)`)
+    .replace(/href="#([^"]+)"/g, `href="#${prefixo}-$1"`);
+  for (const [de, para] of Object.entries(trocar)) miolo = miolo.split(`"${de}"`).join(`"${para}"`);
+  return `<svg x="${x}" y="${y}" width="${largura}" height="${altura}" viewBox="${viewBox}" ${extra}>${miolo.trim()}</svg>`;
 }
 
 // Atalhos ANSI para escrever as cenas
@@ -202,7 +228,21 @@ const _ = '\x1b[0m';
 // ---------------------------------------------------------------------
 // Cenas
 // ---------------------------------------------------------------------
-// Card: o ponto de entrada (js/script.js) — cada responsabilidade num módulo.
+// Arte: três cards da interface, com os logos reais das extensões
+// (assets/images/) e a chave ligada/desligada de cada uma.
+const card = (x, y, logo, nome, ativa, escuro) => `
+  <g transform="translate(${x},${y})" filter="url(#sombra)"${ativa ? '' : ' opacity=".7"'}>
+    <rect width="300" height="112" rx="14" fill="${escuro ? '#1e293b' : '#fcfdff'}" stroke="${escuro ? '#334155' : '#e2e8f0'}"/>
+    ${svgArquivo(`assets/images/${logo}.svg`, { x: 16, y: 16, largura: 40, altura: 40 })}
+    <text x="68" y="34" font-family="system-ui,'Segoe UI',sans-serif" font-size="16" font-weight="700" fill="${escuro ? '#f1f5f9' : '#091540'}">${nome}</text>
+    <rect x="68" y="44" width="170" height="6" rx="3" fill="${escuro ? '#475569' : '#cbd5e1'}"/>
+    <rect x="68" y="56" width="120" height="6" rx="3" fill="${escuro ? '#475569' : '#cbd5e1'}"/>
+    <rect x="16" y="76" width="70" height="24" rx="12" fill="none" stroke="${escuro ? '#475569' : '#cbd5e1'}"/>
+    <text x="51" y="92" text-anchor="middle" font-family="system-ui,'Segoe UI',sans-serif" font-size="11" font-weight="600" fill="${escuro ? '#f1f5f9' : '#091540'}">Remove</text>
+    <rect x="244" y="80" width="40" height="20" rx="10" fill="${ativa ? '#e53935' : escuro ? '#475569' : '#e2e8f0'}"/>
+    <circle cx="${ativa ? 274 : 254}" cy="90" r="7" fill="#ffffff"/>
+  </g>`;
+
 banner({
   arquivo: 'banner.svg',
   titulo: 'Extensions',
@@ -214,23 +254,8 @@ banner({
     { texto: 'Filtros', fundo: 'rgba(229,57,53,.2)', cor: '#ffb4b2' },
     { texto: 'Tema escuro', fundo: 'rgba(229,57,53,.2)', cor: '#ffb4b2' },
   ],
-  card: {
-    fundo: '#0d1117',
-    conteudo: cardTerminal({
-      titulo: 'js/script.js',
-      linhas: [
-        `${az}import${_} { renderCardsList } ${az}from${_} ${v}'./modules/displayCards.js'${_};`,
-        `${az}import${_} { filterCards } ${az}from${_} ${v}'./modules/filter.js'${_};`,
-        `${az}import${_} { toggleTheme } ${az}from${_} ${v}'./modules/toggleTheme.js'${_};`,
-        `${az}import${_} { loadData } ${az}from${_} ${v}'./modules/fetchData.js'${_};`,
-        ``,
-        `${az}async function${_} ${mg}init${_}() {`,
-        `  ${az}await${_} ${mg}loadData${_}();`,
-        `  ${mg}renderCardsList${_}();`,
-        `  ${mg}filterCards${_}();`,
-        `  ${mg}toggleTheme${_}();`,
-        `}`,
-      ],
-    }),
-  },
+  arte: `
+  ${card(800, 30, 'logo-devlens', 'DevLens', true, false)}
+  ${card(760, 134, 'logo-style-spy', 'StyleSpy', true, true)}
+  ${card(840, 238, 'logo-speed-boost', 'SpeedBoost', false, true)}`,
 });

@@ -59,8 +59,14 @@ for (const t of TELAS) {
   await page.setViewport({ width: t.largura, height: t.altura, deviceScaleFactor: 2, isMobile: !!t.mobile, hasTouch: !!t.mobile });
   // Tema fixo: sem isso o Chrome herda o tema do sistema de quem roda.
   await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: t.tema ?? 'light' }]);
+  // Estado salvo que o app lê ao carregar (ex.: tema ou slide atual).
+  if (t.armazenamento) {
+    await page.evaluateOnNewDocument((itens) => {
+      for (const [chave, valor] of Object.entries(itens)) localStorage.setItem(chave, valor);
+    }, t.armazenamento);
+  }
   await page.goto(BASE + t.caminho, { waitUntil: 'networkidle0', timeout: 60000 });
-  await page.addStyleTag({ content: SEM_ANIMACAO });
+  if (!t.animar) await page.addStyleTag({ content: SEM_ANIMACAO });
   // Rola a página inteira para disparar o que só aparece no scroll.
   await page.evaluate(async () => {
     for (let y = 0; y < document.documentElement.scrollHeight; y += innerHeight / 2) {
